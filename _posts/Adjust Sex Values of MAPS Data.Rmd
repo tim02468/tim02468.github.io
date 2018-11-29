@@ -1,0 +1,178 @@
+---
+title: "Adjust Sex Values of MAPS Data"
+author: "Tim"
+date: "2017/1/16"
+output: html_document
+---
+
+##目標處理MAPS資料中過多性別判定為"U"的樣本數
+```{R, message = FALSE}
+library(dplyr)
+```
+
+####匯入資料
+```{R}
+mainData = read.csv("birdsex/feather_corrected_V2(2008-2016).csv", fileEncoding = "big5", stringsAsFactors = FALSE)
+mainData2 = read.csv("birdsex/山紅頭--2011性別檢定(黃建豪).csv", fileEncoding = "big5", stringsAsFactors = FALSE)
+mainData3 = read.csv("birdsex/頭烏線--姚秋如20151008湖本村樣本清單 SEX TYPE 20150119.csv", fileEncoding = "big5", stringsAsFactors = FALSE)
+```
+
+####只使用分生結果中Sex部分資料
+```{R}
+
+mainData2 = mainData2 %>% select(環號, 分生結果)
+mainData3 = mainData3 %>% select(環號, 性別.分子鑑定結果.) %>% filter(環號 != "", 性別.分子鑑定結果. !="-")
+
+```
+
+####將性別欄位變成文字屬性，若是使用factor屬性在後續給予欄位性別值時，容易出現特定欄位缺少某個性別等級，而沒辦法給予數值
+```{R}
+
+mainData$Sex2 = as.character(mainData$Sex2)
+mainData2$分生結果 = as.character(mainData2$分生結果)
+mainData3$性別.分子鑑定結果. = as.character(mainData3$性別.分子鑑定結果.)
+
+```
+
+####首先將主要資料和另外兩個分生結果合併，使用merge( )，by參數選擇依據哪個column合併，all.x參數預設為FALSE->產生的dataframe為df1和df2的交集， TRUE->為聯集
+```{R}
+
+Data = merge(mainData, mainData3, by = "環號", all.x = TRUE)
+Data %>% select(環號, Sex2, 性別.分子鑑定結果.) %>% filter(性別.分子鑑定結果. != "") %>% head(n = 20)
+
+```
+
+####將分子結果中的NA值給予原始Data的性別值
+```{R}
+
+Data$性別.分子鑑定結果.[is.na(Data$性別.分子鑑定結果.)] = Data$Sex2[is.na(Data$性別.分子鑑定結果.)]
+
+```
+
+####將Data和第二個分生結果合併，並將結果中的NA給予第一個分生性別值
+```{R}
+
+Data = merge(Data, mainData2, by = "環號", all.x = TRUE)
+Data$分生結果[is.na(Data$分生結果)] = Data$性別.分子鑑定結果.[is.na(Data$分生結果)]
+Data %>% select(環號, Sex2, 性別.分子鑑定結果., 分生結果) %>% filter(分生結果 != "") %>% head(n = 5)
+
+```
+
+####合併後的結果
+```{R}
+Data2 = Data %>% select(1:63, 65)
+Data2 %>% head(n = 5)
+```
+
+
+####重複捕捉過的環號
+```{R}
+countnum = Data2 %>% select(環號) %>% group_by(環號) %>% summarise(num = n()) %>% filter(num > 1)
+numlist = as.character(countnum$環號)
+numlist = numlist[3:length(numlist)]
+
+print(paste0("至少被捕捉過的兩次以上的環號有: ", length(numlist), "筆"))
+```
+
+
+####不同list放置不同結果，list(MF)表示性別同時含有M和F，listM表示性別中只有M或是M+U
+```{R}
+list_M_and_F = list()
+list_M = list()
+list_F = list()
+list_U = list()
+```
+
+
+####將每一筆重複捕抓環號進入迴圈
+```{R, message=FALSE}
+
+for (i in 1:length(numlist)) {
+  bird = Data2 %>% select(環號, 分生結果) %>% filter(環號 == numlist[[i]]) # 先篩選出特定環號資料
+  
+  if(length(unique(bird$分生結果)) != 1){    # 有包含不同性別判定的環號，進入條件，不同性別組合有UMF，UF，UM，MF以及包含空白的組合
+    # 性別判定中同時包含U 
+    if("U" %in% bird$分生結果){
+      if("M" %in% bird$分生結果){
+        if("F" %in% bird$分生結果){
+          list_M_and_F = c(list_M_and_F, numlist[[i]]) # 同時包含UMF,UMF" "的資料
+        }else{
+          list_M = c(list_M, numlist[[i]]) # UM,UM" "資料
+        }
+      }else if("F" %in% bird$分生結果){
+        list_F = c(list_F, numlist[[i]]) # UF,UF" "資料
+      }else{
+        list_U = c(list_U, numlist[[i]]) # 只包含U,U" "資料
+      }
+    }else{
+      if("M" %in% bird$分生結果){
+        if("F" %in% bird$分生結果){
+          list_M_and_F = c(list_M_and_F, numlist[[i]]) # MF" "資料
+        }else{
+          list_M = c(list_M, numlist[[i]]) # M" "資料
+        }
+      }else{
+        list_F = c(list_F, numlist[[i]]) # F" "資料
+      }
+    }
+  }
+}
+
+#print(Data2 %>% select(環號, 分生結果) %>% filter(環號 %in% list_M_and_F))
+#print(Data2 %>% select(環號, 分生結果) %>% filter(環號 %in% list_M))
+#print(Data2 %>% select(環號, 分生結果) %>% filter(環號 %in% list_F))
+#print(Data2 %>% select(環號, 分生結果) %>% filter(環號 %in% list_U))
+```
+
+####處理M資料，將listM中環號其餘非M的性別改為M
+```{R}
+for (i in 1:length(list_M)) {
+  Data2$分生結果[Data2$環號 == list_M[[i]]] = "M"
+}
+```
+
+####處理F資料
+```{R}
+for (i in 1:length(list_F)) {
+  Data2$分生結果[Data2$環號 == list_F[[i]]] = "F"
+}
+```
+
+
+####更改colname，調整位置
+```{R}
+colnames(Data2)[64] = "Sex2"
+Data2 = Data2[ , c(1:17, 64, 19:(length(Data2)-1))]
+```
+
+####檢查是否有沒有處理到資料，如果有會顯示出環號，剩下矛盾的資料等組長鑑定完成
+```{R}
+for (i in 1:length(list_F)) {
+  test = Data2 %>% filter(環號 == list_F[[i]])
+  if(length(unique(test$Sex2)) != 1){
+    print(list_F[[i]])
+  }
+}
+
+
+for (i in 1:length(list_M)) {
+  test = Data2 %>% filter(環號 == list_M[[i]])
+  if(length(unique(test$Sex2)) != 1){
+    print(list_M[[i]])
+  }
+}
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
