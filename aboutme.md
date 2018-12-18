@@ -6,4 +6,4 @@ subtitle: Why you'd want to go on a date with me
 
 My name is Kuan-Ting Liu. I'm now a Research Assistant in Machine Discovery and Social Network Mining Laboratory at National Taiwan University.
 
-### Here is my [resume]{{% staticref "cv.pdf" %}}.
+### Here is my {{% staticref "cv.pdf" %}}resume{{% /staticref %}}.
